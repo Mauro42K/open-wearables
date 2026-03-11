@@ -111,6 +111,32 @@ class OpenWearablesClient:
         }
         return await self._request("GET", f"/api/v1/users/{user_id}/summaries/sleep", params=params)
 
+    async def get_sleep_sessions(
+        self,
+        user_id: str,
+        start_date: str,
+        end_date: str,
+        limit: int = 100,
+    ) -> dict[str, Any]:
+        """
+        Get sleep sessions for a user within a date range.
+
+        Args:
+            user_id: UUID of the user
+            start_date: Start date (YYYY-MM-DD format)
+            end_date: End date (YYYY-MM-DD format)
+            limit: Maximum number of records to return
+
+        Returns:
+            Paginated response with sleep sessions
+        """
+        params = {
+            "start_date": start_date,
+            "end_date": end_date,
+            "limit": limit,
+        }
+        return await self._request("GET", f"/api/v1/users/{user_id}/events/sleep", params=params)
+
     async def get_workouts(
         self,
         user_id: str,
@@ -166,6 +192,65 @@ class OpenWearablesClient:
             "limit": limit,
         }
         return await self._request("GET", f"/api/v1/users/{user_id}/summaries/activity", params=params)
+
+    async def get_body_summary(
+        self,
+        user_id: str,
+        average_period: int = 7,
+        latest_window_hours: int = 4,
+    ) -> dict[str, Any] | None:
+        """
+        Get body summary metrics for a user.
+
+        Args:
+            user_id: UUID of the user
+            average_period: Days to average vitals (1-7)
+            latest_window_hours: Hours for recent readings to be considered valid
+
+        Returns:
+            Body summary object, or null if no body data exists for the user
+        """
+        params = {
+            "average_period": average_period,
+            "latest_window_hours": latest_window_hours,
+        }
+        return await self._request("GET", f"/api/v1/users/{user_id}/summaries/body", params=params)
+
+    async def get_timeseries(
+        self,
+        user_id: str,
+        start_time: str,
+        end_time: str,
+        types: list[str],
+        resolution: str = "raw",
+        limit: int = 100,
+        cursor: str | None = None,
+    ) -> dict[str, Any]:
+        """
+        Get time series samples for a user within a time range.
+
+        Args:
+            user_id: UUID of the user
+            start_time: Start datetime (ISO 8601 or YYYY-MM-DD)
+            end_time: End datetime (ISO 8601 or YYYY-MM-DD)
+            types: List of time series types to query
+            resolution: Sampling resolution
+            limit: Maximum number of records to return
+            cursor: Pagination cursor
+
+        Returns:
+            Paginated response with time series samples
+        """
+        params: dict[str, Any] = {
+            "start_time": start_time,
+            "end_time": end_time,
+            "types": types,
+            "resolution": resolution,
+            "limit": limit,
+        }
+        if cursor:
+            params["cursor"] = cursor
+        return await self._request("GET", f"/api/v1/users/{user_id}/timeseries", params=params)
 
 
 # Singleton instance

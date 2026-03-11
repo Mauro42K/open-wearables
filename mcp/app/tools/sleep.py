@@ -145,3 +145,106 @@ async def get_sleep_summary(
     except Exception as e:
         logger.exception(f"Unexpected error in get_sleep_summary: {e}")
         return {"error": f"Failed to fetch sleep summary: {e}"}
+
+
+@sleep_router.tool
+async def get_sleep_sessions(
+    user_id: str,
+    start_date: str,
+    end_date: str,
+) -> dict:
+    """
+    Get individual sleep sessions for a user within a date range.
+
+    This tool retrieves discrete sleep sessions, including naps when present.
+    Sessions include start/end timestamps, duration, efficiency, sleep stages,
+    and whether the session is marked as a nap.
+
+    Args:
+        user_id: UUID of the user. Use get_users to discover available users.
+        start_date: Start date in YYYY-MM-DD format.
+                    Example: "2026-01-01"
+        end_date: End date in YYYY-MM-DD format.
+                  Example: "2026-01-07"
+
+    Returns:
+        A dictionary containing:
+        - user: Information about the user (id, first_name, last_name)
+        - period: The date range queried (start, end)
+        - records: List of sleep session records
+        - summary: Aggregate statistics (total_sessions, avg_duration, nap_count)
+
+    Notes for LLMs:
+        - Call get_users first to get the user_id.
+        - Use this tool when the user asks for actual sleep sessions or naps,
+          not just daily rolled-up sleep summaries.
+        - Duration is returned in seconds.
+        - is_nap distinguishes naps from main sleep periods.
+        - Stage values are returned in minutes when available.
+    """
+    try:
+        try:
+            user_data = await client.get_user(user_id)
+            user = {
+                "id": str(user_data.get("id")),
+                "first_name": user_data.get("first_name"),
+                "last_name": user_data.get("last_name"),
+            }
+        except ValueError as e:
+            return {"error": f"User not found: {user_id}", "details": str(e)}
+
+        sleep_response = await client.get_sleep_sessions(
+            user_id=user_id,
+            start_date=start_date,
+            end_date=end_date,
+        )
+
+        records_data = sleep_response.get("data", [])
+
+        records = []
+        durations = []
+        nap_count = 0
+
+        for record in records_data:
+            duration = record.get("duration_seconds")
+            is_nap = bool(record.get("is_nap"))
+            if duration is not None:
+                durations.append(duration)
+            if is_nap:
+                nap_count += 1
+
+            source = record.get("source", {})
+            records.append(
+                {
+                    "id": str(record.get("id")),
+                    "start_datetime": normalize_datetime(record.get("start_time")),
+                    "end_datetime": normalize_datetime(record.get("end_time")),
+                    "duration_seconds": duration,
+                    "efficiency_percent": record.get("efficiency_percent"),
+                    "stages": record.get("stages"),
+                    "is_nap": is_nap,
+                    "source": source.get("provider") if isinstance(source, dict) else source,
+                    "device": source.get("device") if isinstance(source, dict) else None,
+                }
+            )
+
+        summary = {
+            "total_sessions": len(records),
+            "sessions_with_duration": len(durations),
+            "avg_duration_seconds": round(sum(durations) / len(durations)) if durations else None,
+            "nap_count": nap_count,
+        }
+
+        return {
+            "user": user,
+            "period": {"start": start_date, "end": end_date},
+            "records": records,
+            "summary": summary,
+        }
+
+    except ValueError as e:
+        logger.error(f"API error in get_sleep_sessions: {e}")
+        return {"error": str(e)}
+    except Exception as e:
+        logger.exception(f"Unexpected error in get_sleep_sessions: {e}")
+        return {"error": f"Failed to fetch sleep sessions: {e}"}

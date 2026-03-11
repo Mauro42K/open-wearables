@@ -1,0 +1,2 @@
+"""ow-mcp application package."""
+
