@@ -3,6 +3,8 @@
 from datetime import datetime, timezone
 from typing import Any, Mapping
 
+from fastmcp.server.dependencies import get_access_token
+
 from app.config import settings
 from app.schemas.auth import AuthenticatedUser
 
@@ -14,6 +16,27 @@ class SessionResolverError(Exception):
 def _from_session_payload(payload: Mapping[str, Any]) -> AuthenticatedUser:
     """Build an authenticated user from session payload."""
     return AuthenticatedUser.model_validate(payload)
+
+
+def resolve_authenticated_user_from_access_token() -> AuthenticatedUser:
+    """Resolve the authenticated user from a FastMCP bearer token."""
+    access_token = get_access_token()
+    if access_token is None:
+        raise SessionResolverError
+
+    claims = access_token.claims or {}
+    google_user_id = claims.get("sub")
+    google_email = claims.get("email")
+    if not google_user_id or not google_email:
+        raise SessionResolverError
+
+    now = datetime.now(timezone.utc)
+    return AuthenticatedUser(
+        google_user_id=str(google_user_id),
+        google_email=str(google_email),
+        session_id=f"bearer-{access_token.client_id}",
+        authenticated_at=now,
+    )
 
 
 def resolve_authenticated_user_from_headers(headers: Mapping[str, str]) -> AuthenticatedUser:
@@ -34,7 +57,12 @@ def resolve_authenticated_user_from_headers(headers: Mapping[str, str]) -> Authe
 
 
 def resolve_authenticated_user_from_request(request: Any) -> AuthenticatedUser:
-    """Resolve the authenticated user from session, with optional debug fallback."""
+    """Resolve the authenticated user from bearer token, session, or debug headers."""
+    try:
+        return resolve_authenticated_user_from_access_token()
+    except (RuntimeError, SessionResolverError):
+        pass
+
     session = getattr(request, "session", None) or {}
     session_payload = session.get("authenticated_user")
     if isinstance(session_payload, Mapping):

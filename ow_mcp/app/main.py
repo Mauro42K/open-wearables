@@ -4,18 +4,20 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
+from starlette.routing import Route
 from starlette.middleware.sessions import SessionMiddleware
 import uvicorn
 
 from app.api.routes import api_router
 from app.config import settings
 from app.database import Base, engine
-from app.mcp_server import mcp
+from app.mcp_server import create_mcp_server
 from app import models as _models  # noqa: F401
 
 
 def create_app() -> FastAPI:
     """Create the FastAPI application."""
+    mcp, auth_provider = create_mcp_server()
     mcp_http_app = mcp.http_app(path="/", transport="streamable-http")
 
     @asynccontextmanager
@@ -43,6 +45,11 @@ def create_app() -> FastAPI:
         return JSONResponse(status_code=exc.status_code, content=content)
 
     app.include_router(api_router)
+    if auth_provider is not None:
+        root_well_known_routes = auth_provider.get_well_known_routes(mcp_path="/")
+        app.router.routes.extend(
+            route for route in root_well_known_routes if isinstance(route, Route)
+        )
     app.mount("/mcp", mcp_http_app)
     return app
 
